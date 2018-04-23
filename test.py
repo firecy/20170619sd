@@ -7,7 +7,7 @@ import timeit
 import numpy as np
 from functions import *
 
-def limits_array():
+def get_limits():
     WeatherLimits = np.array([[0., -216., 0., 0., -216.],
                                  [38.4, 216., 38.4, 38.4, 216.]]) #天气变量上下限
     PitchSystemLimits = np.zeros((2, 27)) #变桨系统变量上下限
@@ -34,40 +34,6 @@ def limits_array():
     ConverterLimits = np.array([[-12.5, 0.],
                                    [77.5, 100.]]) #变流器变量上下限
     FanBrakeLimits = np.array([[0., 0.],
-                                  [70., 9.]]) #风机制动变量上下限
-    limits = [WeatherLimits, PitchSystemLimits, EgineRoomLimits, ControlVariableLimits,
-                      GearBoxLimits, GeneratorLimits, YawSystemLimits, PowerLimits,
-                      ConverterLimits, FanBrakeLimits]
-    limits2 = SetData(limits)
-    return limits2
-
-def get_limits2():
-    WeatherLimits = np.array([[0., -270., 0., 0., -270.],
-                                 [32., 180., 32., 32., 180.]]) #天气变量上下限
-    PitchSystemLimits = np.zeros((2, 27)) #变桨系统变量上下限
-    PitchSystemLimits[:, 0: 10] = np.array([[-3., 0., 0., 0., -7., -10., 0., -360., 0., -360.],
-                                               [96., 460., 19., 19., 7., 65., 460., 360., 90., 360.]])
-    PitchSystemLimits[:, 10: 20] = np.array([[-7., 0., -3., -3., -10., 0., -10., -60., 0., 0.],
-                                                [7., 91., 96., 96., 60., 91., 65., 140., 19., 460.]])
-    PitchSystemLimits[:, 20: 27] = np.array([[0., 0., -360., -60., -60., -10., -7.],
-                                                [90., 90., 360., 140., 140., 65., 7.]])
-    EgineRoomLimits = np.array([[-0.5, -5., -0.5],
-                                   [0.5, 5., 0.5]]) #机舱振动变量上下限
-    ControlVariableLimits = np.array([[-20., -5., -20., -20., -5.],
-                                         [55., 55., 55., 40., 55.]]) #控制因素变量上下限
-    GearBoxLimits = np.array([[0., -20., 0., 0., 0.],
-                                 [90., 68., 80., 90., 80.]]) #齿轮箱变量上下限
-    GeneratorLimits = np.array([[-15., -160., 0., 0., 0., -15., 0., 0.],
-                                   [95., 2300., 145., 145., 95., 145., 145., 90.]])
-                                   #发电机变量上下限
-    YawSystemLimits = np.array([[0., 0., -750., -270.],
-                                   [170., 120., 750., 180.]]) #偏航系统变量上下限
-    PowerLimits = np.array([[0., 0., 0., 340., 340., 340., -1., 48.5, -1., 0., -825., -220.],
-                               [2000., 2000., 2000., 440., 440., 440., 1., 51.5, 1., 1., 1015., 2350.]])
-                                #电网变量上下限
-    ConverterLimits = np.array([[-5., 0.],
-                                   [70., 100.]]) #变流器变量上下限
-    FanBrakeLimits = np.array([[0., 1.],
                                   [70., 9.]]) #风机制动变量上下限
     limits = [WeatherLimits, PitchSystemLimits, EgineRoomLimits, ControlVariableLimits,
                       GearBoxLimits, GeneratorLimits, YawSystemLimits, PowerLimits,
