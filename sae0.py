@@ -272,6 +272,93 @@ def train_clflayer(x, y, lr, batch_size, epoch, loss):
     overparams = grid_result.best_params_
     return weights, overparams
 
+def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
+                hidden_unit=[20, 40, 160, 320],
+                pre_epoch=[200, 500, 800],
+                fine_epoch=[300, 500, 1000],
+                batch_size=[1380, 2760, 5520, 11040],
+                lr1=[0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
+                lr2=[0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
+                model1_params=None,
+                model1_hids=None,
+                model2_params=None,
+                dec_act='linear',
+                loss='binary_crossentropy'
+                type=0):
+    # load data
+    x_train = load_trainset(trainset[0], limits_array, x_mean, x_std, x_u, x_s, epsilon)
+    y_train = trainset[1]
+    x_train,  y_train = trainset_trans(x_train, y_train)
+    input_num = x_train.shape[1]
+    nb_classes = len(set(y_train))
+    yr_train = np_utils.to_categorical(y_train, nb_classes)
+    x_train, y_train, yr_train = shuffle(x_train, y_train, yr_train)
+    h_train = x_train
+    pre_epoch = pre_epoch
+    fine_epoch = fine_epoch
+    batch_size = batch_size
+    hidden_unit = hidden_unit
+    lr1 = lr1
+    lr2 = lr2
+    dec_act = 'linear'
+    loss=loss
+    model1_params = model1_params
+    model1_hids = model1_hids
+    model2_params = model2_params
+    # greedy layer training
+    print "greedy layer training"
+    start_time = timeit.default_timer()
+    parameters1, parameters2, overparams = train_greedylayer(trainset=x,
+                                            validset=x2,
+                                            hidden_unit=hidden_unit,
+                                            epoch=epoch,
+                                            batch_size=batch_size,
+                                            lr=lr,
+                                            dec_act=dec_act)
+    end_time = timeit.default_timer()
+    print "run %.2f miniutes for greedy layer training!" % ((end_time-start_time)/60.)
+    # construct SAE and SAE_encoder models
+    print "construct SAE and SAE_encoder models"
+    if model1_params == None: input_num = x.shape[1]
+    else: input_num = model1_params[0][0].shape[0]
+    input_dim = Input(shape=(input_num,))
+    hidden_last_unit = overparams['hidden_unit']
+    # construct single layer model
+    if model1_hids == None:
+        encoder_layer = Dense(hidden_last_unit, activation='relu',
+                    activity_regularizer=regularizers.l2(10e-10))(input_dim)
+        decoder_layer = Dense(input_num, activation='linear')(encoder_layer)
+    # construct multilayers model
+    else:
+        k = len(model1_hids)
+        encoder_layer = Dense(model1_hids[0], activation='relu',
+                    activity_regularizer=regularizers.l2(10e-10))(input_dim)
+        for i in range(k-1):
+            encoder_layer = Dense(model1_hids[i+1], activation='relu',
+                            activity_regularizer=regularizers.l2(10e-10))(encoder_layer)
+        encoder_layer = Dense(hidden_last_unit, activation='relu',
+                        activity_regularizer=regularizers.l2(10e-10))(encoder_layer)
+        for j in range(k):
+            decoder_layer = Dense(model1_hids[k-j-1])(encoder_layer)
+        decoder_layer = Dense(input_num, activation='linear')(decoder_layer)
+    SAE = Model(input_dim, output=decoder_layer)
+    SAE_encoder = Model(input_dim, output=encoder_layer)
+    # give weights parameters
+    if model1_hids == None:
+        SAE_encoder.layers[1].set_weights(parameters1)
+        SAE.layers[1].set_weights(parameters1)
+        SAE.layers[2].set_weights(parameters2)
+    else:
+        for i2 in range(len(SAE_encoder.layers)-2):
+            SAE_encoder.layers[i2+1].set_weights(model1_params[i2])
+            SAE.layers[i2+1].set_weights(model1_params[i2])
+            SAE.layers[-1-i2].set_weights(model2_params[i2])
+        SAE_encoder.layers[-1].set_weights(parameters1)
+        SAE.layers[k+1].set_weights(parameters1)
+        SAE.layers[k+2].set_weights(parameters2)
+    print "finish traning"
+    return SAE, SAE_encoder, overparams
+
 def get_output_of_layer(model, x, k):
     get_layer_output = K.function([model.layers[0].input],
                                   [model.layers[k].output])
