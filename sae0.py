@@ -281,83 +281,84 @@ def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                 lr2=[0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
                 model1_params=None,
                 model1_hids=None,
-                model2_params=None,
-                dec_act='linear',
                 loss='binary_crossentropy'
                 type=0):
     # load data
     x_train = load_trainset(trainset[0], limits_array, x_mean, x_std, x_u, x_s, epsilon)
     y_train = trainset[1]
     x_train,  y_train = trainset_trans(x_train, y_train)
-    input_num = x_train.shape[1]
+    if model1_hids == None:
+        input_num = x_train.shape[1]
+        dec_act = 'linear'
+    else:
+        input_num = model1_params[0][0].shape[0]
+        dec_act = 'relu'
     nb_classes = len(set(y_train))
     yr_train = np_utils.to_categorical(y_train, nb_classes)
     x_train, y_train, yr_train = shuffle(x_train, y_train, yr_train)
-    h_train = x_train
     pre_epoch = pre_epoch
     fine_epoch = fine_epoch
     batch_size = batch_size
     hidden_unit = hidden_unit
     lr1 = lr1
     lr2 = lr2
-    dec_act = 'linear'
     loss=loss
     model1_params = model1_params
     model1_hids = model1_hids
-    model2_params = model2_params
-    # greedy layer training
-    print "greedy layer training"
     start_time = timeit.default_timer()
-    parameters1, parameters2, overparams = train_greedylayer(trainset=x,
-                                            validset=x2,
-                                            hidden_unit=hidden_unit,
-                                            epoch=epoch,
-                                            batch_size=batch_size,
-                                            lr=lr,
-                                            dec_act=dec_act)
-    end_time = timeit.default_timer()
-    print "run %.2f miniutes for greedy layer training!" % ((end_time-start_time)/60.)
-    # construct SAE and SAE_encoder models
-    print "construct SAE and SAE_encoder models"
-    if model1_params == None: input_num = x.shape[1]
-    else: input_num = model1_params[0][0].shape[0]
-    input_dim = Input(shape=(input_num,))
-    hidden_last_unit = overparams['hidden_unit']
-    # construct single layer model
-    if model1_hids == None:
-        encoder_layer = Dense(hidden_last_unit, activation='relu',
-                    activity_regularizer=regularizers.l2(10e-10))(input_dim)
-        decoder_layer = Dense(input_num, activation='linear')(encoder_layer)
-    # construct multilayers model
-    else:
+    PFL_model = Sequtial()
+    # greedy layer training
+    if type == 0:
+        print "greedy layer training"
+        parameters, overparams = train_greedylayer(trainset=x_train,
+                                                hidden_unit=hidden_unit,
+                                                epochs=pre_epoch,
+                                                batch_size=batch_size,
+                                                lr=lr1,
+                                                dec_act=dec_act)
+        if model1_hids == None:
+            PFL_model.add(Dense(overparams['hidden_unit'], input_dim=input_num,
+                            init='uniform', activation='relu',
+                            activity_regularizer=regularizers.l2(10e-10)))
+        else:
+            k = len(model1_hids)
+            PFL_model.add(Dense(model1_hids[0], input_dim=input_num,
+                            init='uniform', activation='relu',
+                            activity_regularizer=regularizers.l2(10e-10)))
+            PFL_model.layers[0].get_weights(model1_params[0])
+            for i in range(k-1):
+                PFL_model.add(Dense(model1_hids[i+1], init='uniform',
+                activation='relu',
+                activity_regularizer=regularizers.l2(10e-10)))
+                PFL_model.layers[i+1].get_weights(model1_params[i+1])
+            PFL_model.add(Dense(overparams['hidden_unit'],
+                            init='uniform', activation='relu',
+                            activity_regularizer=regularizers.l2(10e-10)))
+            PFL_model.layers[-1].get_weights(parameters)
+    if type == 1:
+        print "finetune classfier training"
+        parameters, overparams = train_clflayer(x=x_train, y=yr_train,
+                                                lr=lr2,
+                                                batch_size=batch_size,
+                                                epoch=fine_epoch,
+                                                loss=loss)
         k = len(model1_hids)
-        encoder_layer = Dense(model1_hids[0], activation='relu',
-                    activity_regularizer=regularizers.l2(10e-10))(input_dim)
+        PFL_model.add(Dense(model1_hids[0], input_dim=input_num,
+                        init='uniform', activation='relu',
+                        activity_regularizer=regularizers.l2(10e-10)))
+        PFL_model.layers[0].get_weights(model1_params[0])
         for i in range(k-1):
-            encoder_layer = Dense(model1_hids[i+1], activation='relu',
-                            activity_regularizer=regularizers.l2(10e-10))(encoder_layer)
-        encoder_layer = Dense(hidden_last_unit, activation='relu',
-                        activity_regularizer=regularizers.l2(10e-10))(encoder_layer)
-        for j in range(k):
-            decoder_layer = Dense(model1_hids[k-j-1])(encoder_layer)
-        decoder_layer = Dense(input_num, activation='linear')(decoder_layer)
-    SAE = Model(input_dim, output=decoder_layer)
-    SAE_encoder = Model(input_dim, output=encoder_layer)
-    # give weights parameters
-    if model1_hids == None:
-        SAE_encoder.layers[1].set_weights(parameters1)
-        SAE.layers[1].set_weights(parameters1)
-        SAE.layers[2].set_weights(parameters2)
-    else:
-        for i2 in range(len(SAE_encoder.layers)-2):
-            SAE_encoder.layers[i2+1].set_weights(model1_params[i2])
-            SAE.layers[i2+1].set_weights(model1_params[i2])
-            SAE.layers[-1-i2].set_weights(model2_params[i2])
-        SAE_encoder.layers[-1].set_weights(parameters1)
-        SAE.layers[k+1].set_weights(parameters1)
-        SAE.layers[k+2].set_weights(parameters2)
+            PFL_model.add(Dense(model1_hids[i+1], init='uniform',
+            activation='relu',
+            activity_regularizer=regularizers.l2(10e-10)))
+            PFL_model.layers[i+1].get_weights(model1_params[i+1])
+        PFL_model.add(Dense(overparams['hidden_unit'], init='uniform',
+                            activation='softmax',)
+        PFL_model.layers[-1].get_weights(parameters)
     print "finish traning"
-    return SAE, SAE_encoder, overparams
+    end_time = timeit.default_timer()
+    train_time = (end_time-start_time)/60.
+    return PFL_model, overparams, train_time
 
 def get_output_of_layer(model, x, k):
     get_layer_output = K.function([model.layers[0].input],
