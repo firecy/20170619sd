@@ -282,11 +282,12 @@ def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                 model1_params=None,
                 model1_hids=None,
                 loss='binary_crossentropy'
-                type=0):
+                type=0,
+                overparams_lists):
     # load data
     x_train = load_trainset(trainset[0], limits_array, x_mean, x_std, x_u, x_s, epsilon)
     y_train = trainset[1]
-    x_train,  y_train = trainset_trans(x_train, y_train)
+    x_train, y_train = trainset_trans(x_train, y_train)
     if model1_hids == None:
         input_num = x_train.shape[1]
         dec_act = 'linear'
@@ -316,6 +317,7 @@ def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                                                 batch_size=batch_size,
                                                 lr=lr1,
                                                 dec_act=dec_act)
+        overparams_lists.append(overparams)
         if model1_hids == None:
             PFL_model.add(Dense(overparams['hidden_unit'], input_dim=input_num,
                             init='uniform', activation='relu',
@@ -342,6 +344,7 @@ def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                                                 batch_size=batch_size,
                                                 epoch=fine_epoch,
                                                 loss=loss)
+        overparams_lists.append(overparams)
         k = len(model1_hids)
         PFL_model.add(Dense(model1_hids[0], input_dim=input_num,
                         init='uniform', activation='relu',
@@ -358,7 +361,53 @@ def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
     print "finish traning"
     end_time = timeit.default_timer()
     train_time = (end_time-start_time)/60.
-    return PFL_model, overparams, train_time
+    return PFL_model, overparams_lists, train_time
+
+def train_model4(trainset_old, trainset_new, limits_array, x_mean, x_std, x_u,
+    x_s, epsilon=0.1, old_model, overparams_list, fine_epoch, batch_size, lr, k):
+    # load data
+    start_time = timeit.default_timer()
+    x_train_old = load_trainset(trainset_old[0], limits_array, x_mean, x_std, x_u, x_s, epsilon)
+    y_train_old = trainset[1]
+    x_train_old, y_train_old = trainset_trans(x_train_old, y_train_old)
+    x_train_new = load_trainset(trainset_new[0], limits_array, x_mean, x_std, x_u, x_s, epsilon)
+    y_train_new = trainset[1]
+    x_train_new, y_train_new = trainset_trans(x_train_new, y_train_new)
+    x_train = np.vstack((x_train_old, x_train_new))
+    y_train = np.hstack((y_train_old, y_train_new))
+    nb_classes = len(set(y_train))
+    if nb_classes < 3: loss = 'binary_crossentropy'
+    else: loss = 'categorical_crossentropy'
+    yr_train = np_utils.to_categorical(y_train, nb_classes)
+    x_train, y_train, yr_train = shuffle(x_train, y_train, yr_train)
+    fine_epoch = fine_epoch
+    batch_size = batch_size
+    lr = lr
+    new_model = old_model
+    adam = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+    new_model.compile(optimizer=adam, loss=loss, metrics=['accuracy'])
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5)
+    history0 = new_model.fit(x_train, y_train,
+                  nb_epoch=fine_epoch,
+                  batch_size=batch_size,
+                  verbose=0,
+                  callbacks=[early_stopping],
+                  validation_split=0.3)
+    for i in range(k-1):
+        history = new_model.fit(x_train, y_train,
+                      nb_epoch=fine_epoch,
+                      batch_size=batch_size,
+                      verbose=0,
+                      callbacks=[early_stopping],
+                      validation_split=0.3)
+        if history0.history['metrics'][-1] < history.history['metrics'][-1]:
+            PFL_model = new_model
+    end_time = timeit.default_timer()
+    train_time = (end_time - start_time) / 60.
+    return PFL_model, train_time
+
+
+
 
 def get_output_of_layer(model, x, k):
     get_layer_output = K.function([model.layers[0].input],
