@@ -46,13 +46,12 @@ def get_limits():
 def get_mean_std_usv(xset, limits_array):
     min_array = limits_array[0, :]
     max_array = limits_array[1, :]
-    xset = xset
+    xset = np.vstack((xset))
     xnor = minmax_standardization(xset, min_array, max_array)
-    xtrans = np.vstack((xnor))
-    x_mean = np.mean(xtrans, axis=0)
-    x_std = np.std(xtrans, axis=0)
-    x_u, x_s = get_usv(xtrans, x_mean, x_std)
-    del xset, xtrans, xnor, min_array, max_array, limits_array
+    x_mean = np.mean(xnor, axis=0)
+    x_std = np.std(xnor, axis=0)
+    x_u, x_s = get_usv(xnor)
+    del xset, xnor, min_array, max_array, limits_array
     gc.collect()
     return x_mean, x_std, x_u, x_s
 
@@ -87,13 +86,23 @@ def trainset_trans(trainset, labels):
     x = trainset
     y = labels
     x0 = x[0]
-    y0 = y[0] * np.ones(x0.shape[0], dtype=int32)
+    y0 = y[0] * np.ones(x0.shape[0], dtype=int)
     for i in range(len(x)):
         if  (i != 0):
             x1 = x[i]
-            y1 = y[i] * np.ones(x1.shape[0], dtype=int32)
+            y1 = y[i] * np.ones(x1.shape[0], dtype=int)
             x0 = np.vstack((x0, x1))
             y0 = np.hstack((y0, y1))
     del x, y, x1, y1
     gc.collect()
     return x0, y0
+
+if __name__ == '__main__':
+    xset = np.load('data_all.npy')[0]
+    limits_array = np.loadtxt('data_limits.csv', delimiter=',')
+    x_mean, x_std, x_u, x_s = get_mean_std_usv(xset, limits_array)
+    np.save('x_mean_lgt', x_mean)
+    np.save('x_std_lgt', x_std)
+    np.save('x_u_lgt', x_u)
+    np.save('x_s_lgt', x_s)
+    print 'finish'
