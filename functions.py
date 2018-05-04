@@ -28,7 +28,8 @@ def fea_standardization(x):
     The data is converted to a mean of 0 and variance data 1.
     '''
     x -= np.mean(x, axis=0)
-    x /= np.std(x, axis=0)
+    for i in range(x.shape[1]):
+        if np.std(x[:, i]) != 0: x[:, i] /= np.std(x[:, i])
     return x
 
 def fea_standardization2(x, x_mean, x_std):
