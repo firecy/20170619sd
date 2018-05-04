@@ -20,12 +20,15 @@ from preprocessing import *
 from sklearn.utils import shuffle
 from sklearn.metrics import recall_score, f1_score
 
-from keras.models import Sequtial
+from keras.models import Sequential
 from keras import regularizers
 from keras.models import model_from_json
 from keras import backend as K
 from keras.optimizers import Adam
 from keras.utils import np_utils
+from keras.layers import Dense
+from sklearn.grid_search import GridSearchCV
+from keras.wrappers.scikit_learn import KerasRegressor, KerasClassifier
 
 import pickle
 
@@ -58,7 +61,7 @@ def train_SAEmodel1(dataset, hidden_layer_list, lr, dec_act, batch_size, epochs)
     model = KerasRegressor(build_fn=create_SAEmodel1, input_num=x.shape[1], verbose=0)
     # define the grid search parameters
     hidden_layer_list = hidden_layer_list
-    lr2 = lr2
+    lr = lr
     batch_size = batch_size
     epochs = epochs
     dec_act = dec_act
@@ -72,8 +75,8 @@ def train_SAEmodel1(dataset, hidden_layer_list, lr, dec_act, batch_size, epochs)
     del x, hidden_layer_list, lr, batch_size, epochs, param_grid
     gc.collect()
     best_model = grid_result.best_estimator_.model
-    k = best_model.layers
-    for i in range(k/2.):
+    k = len(best_model.layers)
+    for i in range(k/2):
         best_model.pop()
     return best_model, grid_result.best_params_
 
@@ -88,7 +91,8 @@ def create_PFLmodel1(saemodel, output_num, lr, loss):
 def train_PFLmodel1(dataset, saemodel, lr, batch_size, epochs, loss):
     #create_model
     x_train, y_train = dataset
-    output_num = len(set(y_train))
+    #output_num = len(set(y_train))
+    output_num = 2
     yr_train = np_utils.to_categorical(y_train, output_num)
     x_train, y_train, yr_train = shuffle(x_train, y_train, yr_train)
     model = KerasClassifier(build_fn=create_PFLmodel1, loss=loss,
@@ -101,7 +105,7 @@ def train_PFLmodel1(dataset, saemodel, lr, batch_size, epochs, loss):
                       nb_epoch=epochs)
     grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=-1,
                         scoring='accuracy', cv=5)
-    grid_result = grid.fit(x_train, yr_train)
+    grid_result = grid.fit(x_train, y_train)
     del dataset, saemodel, lr, batch_size, epochs, param_grid
     gc.collect()
     # summarize results
@@ -122,6 +126,7 @@ def train_model1(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
     dataset_train = trainset_trans(x_train, y_train)
     overparams_lists = []
     start_time = timeit.default_timer()
+
     SAE_encoder, se_overparams = train_SAEmodel1(dataset=dataset_train[0],
                         hidden_layer_list=hidden_layer_list,
                         epochs=pre_epoch,
@@ -129,8 +134,14 @@ def train_model1(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                         lr=lr1,
                         dec_act=dec_act)
     overparams_lists.append(se_overparams)
+
+    model_path = 'lgt30071_architechture.json'
+    weights_path = 'lgt30071_weights.h5'
+    #save_model(SAE_encoder, model_path, weights_path)
+    SAE_encoder = load_model(model_path, weights_path)
+    print 'finish greedy traning'
     PFL_model, pfl_overparams = train_PFLmodel1(dataset=dataset_train,
-                                saemodel=SAE_encoder,
+                                saemodel=params,
                                 lr=lr2,
                                 batch_size=batch_size,
                                 epochs=fine_epoch,
@@ -253,7 +264,7 @@ def train_clflayer(x, y, lr, batch_size, epoch, loss):
     #create_model
     input_num = x.shape[1]
     output_num = len(set(y))
-    model = KerasClassifier(build_fn=create_clflayer, input_num=x.shape[1],
+    model = KerasClassifier(build_fn=create_clflayer,
                            input_num=input_num, output_num=output_num,
                            loss=loss, verbose=0)
     #define the grid search parameters
@@ -271,8 +282,8 @@ def train_clflayer(x, y, lr, batch_size, epoch, loss):
     weights = pflclassifer.layers[0].get_weights()
     overparams = grid_result.best_params_
     return weights, overparams
-
-def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
+'''
+def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon,
                 hidden_unit=[20, 40, 160, 320],
                 pre_epoch=[200, 500, 800],
                 fine_epoch=[300, 500, 1000],
@@ -281,7 +292,7 @@ def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                 lr2=[0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
                 model1_params=None,
                 model1_hids=None,
-                loss='binary_crossentropy'
+                loss='binary_crossentropy',
                 type=0,
                 overparams_lists):
     # load data
@@ -337,7 +348,7 @@ def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                             init='uniform', activation='relu',
                             activity_regularizer=regularizers.l2(10e-10)))
             PFL_model.layers[-1].get_weights(parameters)
-    if type == 1:
+    else:
         print "finetune classfier training"
         parameters, overparams = train_clflayer(x=x_train, y=yr_train,
                                                 lr=lr2,
@@ -349,15 +360,15 @@ def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
         PFL_model.add(Dense(model1_hids[0], input_dim=input_num,
                         init='uniform', activation='relu',
                         activity_regularizer=regularizers.l2(10e-10)))
-        PFL_model.layers[0].get_weights(model1_params[0])
+        PFL_model.layers[0].set_weights(model1_params[0])
         for i in range(k-1):
             PFL_model.add(Dense(model1_hids[i+1], init='uniform',
             activation='relu',
             activity_regularizer=regularizers.l2(10e-10)))
-            PFL_model.layers[i+1].get_weights(model1_params[i+1])
+            PFL_model.layers[i+1].set_weights(model1_params[i+1])
         PFL_model.add(Dense(overparams['hidden_unit'], init='uniform',
-                            activation='softmax',)
-        PFL_model.layers[-1].get_weights(parameters)
+                            activation='softmax'))
+        PFL_model.layers[-1].set_weights(parameters)
     print "finish traning"
     end_time = timeit.default_timer()
     train_time = (end_time-start_time)/60.
@@ -405,10 +416,7 @@ def train_model4(trainset_old, trainset_new, limits_array, x_mean, x_std, x_u,
     end_time = timeit.default_timer()
     train_time = (end_time - start_time) / 60.
     return PFL_model, train_time
-
-
-
-
+'''
 def get_output_of_layer(model, x, k):
     get_layer_output = K.function([model.layers[0].input],
                                   [model.layers[k].output])
@@ -616,7 +624,6 @@ def test_model(model, testset, limits_array, x_mean, x_std, u, s, epsilon=0.01):
     F1 = f1_score(y_test2, y_test_pred2, average='macro')
     return accuracy, F1, test_time
 
-
 def location_model(model, dataset, limits_array, x_mean, x_std, x_u, x_s, sfault_num=2, epsilon=0.01):
     x = load_trainset(dataset, limits_array, x_mean, x_std, x_u, x_s, epsilon)
     #y_pred = np.zeros(fault_num, dtype=int32)
@@ -635,33 +642,40 @@ def location_model(model, dataset, limits_array, x_mean, x_std, x_u, x_s, sfault
     return result_list
 
 def main():
-    trainset = np.load('data/multidata_train.npy')
-    validset = np.load('data/multidata_valid.npy')
-    testset = np.load('data/multidata_test.npy')
+    trainset = np.load('test_30071.npy')
+    testset = np.load('test_30071.npy')
     #locaset = np.load('data/test60300.npy')
-    limits_array = np.loadtxt('data/data_limits.csv', delimiter=',')
-    x_mean = np.load('data/dataxnor_mean4.npy')
-    x_std = np.load('data/dataxnor_std4.npy')
-    x_u = np.load('data/dataxnor_u4.npy')
-    x_s = np.load('data/dataxnor_s4.npy')
-    '''
-    model, val_acc, train_time = train_model(trainset, validset, limits_array,
+    limits_array = np.loadtxt('data_limits.csv', delimiter=',')
+    x_mean = np.load('x_mean_lgt.npy')
+    x_std = np.load('x_std_lgt.npy')
+    x_u = np.load('x_u_lgt.npy')
+    x_s = np.load('x_s_lgt.npy')
+
+    hidden_layer_list=[[146]]
+    pre_epoch=[800]
+    fine_epoch=[800]
+    batch_size=[1380]
+    lr1=[0.003]
+    lr2=[0.003]
+    dec_act=['linear']
+    loss='binary_crossentropy'
+
+    model, params, train_time = train_model1(trainset, limits_array,
                                              x_mean, x_std, x_u, x_s,
-                                             epsilon=0.01,
-                                             hidden_layer_list=[200, 100, 50, 20],
-                                             pre_epoch=[100, 100, 100, 100],
-                                             fine_epoch=100,
-                                             lr1=[0.001, 0.001, 0.001, 0.001], lr2=0.0003)
-    '''
+                                    hidden_layer_list=hidden_layer_list,
+                                    pre_epoch=pre_epoch,
+                                    fine_epoch=fine_epoch,
+                                    lr1=lr1,
+                                    lr2=lr2,
+                                    dec_act=dec_act,
+                                    loss=loss)
+
 
     #print val_acc, train_time
-    model_path = 'data/multi_architechture_7.json'
-    weights_path = 'data/multi_weights_7.h5'
+    model_path = 'lgt30071_architechture.json'
+    weights_path = 'lgt30071_weights.h5'
     #save_model(model, model_path, weights_path)
-    model_path1 = 'data/multi_architechture.json'
-    weights_path1 = 'data/multi_weights.h5'
-    model = load_model(model_path, weights_path)
-    save_model(model, model_path1, weights_path1)
+    save_model(model, model_path, weights_path)
 
     test_results = test_model(model, testset, limits_array, x_mean, x_std, x_u, x_s)
     print test_results
