@@ -29,6 +29,7 @@ from keras.utils import np_utils
 from keras.layers import Dense
 from sklearn.grid_search import GridSearchCV
 from keras.wrappers.scikit_learn import KerasRegressor, KerasClassifier
+from keras.callbacks import EarlyStopping
 
 import pickle
 
@@ -37,22 +38,22 @@ def create_SAEmodel1(input_num, hidden_layer_list, lr, dec_act):
     model = Sequential()
     k = len(hidden_layer_list)
     #encoder layer
-    model.add(Dense(hidden_layer_list[0], input_dim=input_num, init='uniform',
+    model.add(Dense(hidden_layer_list[0], input_dim=input_num,
                     activation='relu', activity_regularizer=regularizers.l2(10e-10)))
     for i in range(k-1):
-        model.add(Dense(hidden_layer_list[i+1], activation='relu', init='uniform',
+        model.add(Dense(hidden_layer_list[i+1], activation='relu',
                         activity_regularizer=regularizers.l2(10e-10)))
     #decoder layers
     if k == 1:
-        model.add(Dense(input_num, activation=dec_act, init='uniform'))
+        model.add(Dense(input_num, activation=dec_act))
     else:
-        model.add(Dense(hidden_layer_list[-2], activation='relu', init='uniform'))
+        model.add(Dense(hidden_layer_list[-2], activation='relu'))
         for i in range(k-2):
-            model.add(Dense(hidden_layer_list[k-i-3], activation='relu', init='uniform'))
-        model.add(Dense(input_num, activation=dec_act, init='uniform'))
+            model.add(Dense(hidden_layer_list[k-i-3], activation='relu'))
+        model.add(Dense(input_num, activation=dec_act))
     # compile model
     adam = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
-    model.compile(optimizer=adam, loss='mse', metrics=['mae'])
+    model.compile(optimizer=adam, loss='msle', metrics=['mae'])
     return model
 
 def train_SAEmodel1(dataset, hidden_layer_list, lr, dec_act, batch_size, epochs):
@@ -78,25 +79,35 @@ def train_SAEmodel1(dataset, hidden_layer_list, lr, dec_act, batch_size, epochs)
     k = len(best_model.layers)
     for i in range(k/2):
         best_model.pop()
+    print len(best_model.layers)
     return best_model, grid_result.best_params_
 
-def create_PFLmodel1(saemodel, output_num, lr, loss):
+def create_PFLmodel1(saeparams, input_num, lr, loss):
     adam = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
-    model = saemodel
+    model = Sequential()
+    model.add(Dense(saeparams['hids'][0], input_dim=input_num, init='uniform',
+                    activation='relu', activity_regularizer=regularizers.l2(10e-10)))
+    model.layers[0].set_weights(saeparams['weights'][0])
+    model.layers[0].trainable =  False
+    for i in range(len(saeparams['hids'])-1):
+        model.add(Dense(saeparams['hids'][i+1], activation='relu', init='uniform',
+                        activity_regularizer=regularizers.l2(10e-10)))
+        model.layers[i+1].set_weights(saeparams['weights'][i+1])
+        model.layers[i+1].trainable =  False
     #classfier layer
-    model.add(Dense(output_num, init='uniform', activation='softmax'))
+    model.add(Dense(1, init='uniform', activation='sigmoid'))
     model.compile(optimizer=adam, loss=loss, metrics=['accuracy'])
     return model
 
-def train_PFLmodel1(dataset, saemodel, lr, batch_size, epochs, loss):
+def train_PFLmodel1(dataset, saeparams, lr, batch_size, epochs, loss):
     #create_model
     x_train, y_train = dataset
+    print x_train.shape, y_train.shape
     #output_num = len(set(y_train))
-    output_num = 2
-    yr_train = np_utils.to_categorical(y_train, output_num)
-    x_train, y_train, yr_train = shuffle(x_train, y_train, yr_train)
-    model = KerasClassifier(build_fn=create_PFLmodel1, loss=loss,
-                            output_num=output_num, saemodel=saemodel, verbose=0)
+    input_num = x_train.shape[1]
+    x_train, y_train = shuffle(x_train, y_train)
+    model = KerasClassifier(build_fn=create_PFLmodel1, loss=loss, input_num=input_num,
+                            saeparams=saeparams, verbose=0)
     #define the grid search parameters
     lr = lr
     batch_size = batch_size
@@ -106,7 +117,7 @@ def train_PFLmodel1(dataset, saemodel, lr, batch_size, epochs, loss):
     grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=-1,
                         scoring='accuracy', cv=5)
     grid_result = grid.fit(x_train, y_train)
-    del dataset, saemodel, lr, batch_size, epochs, param_grid
+    del dataset, saeparams, lr, batch_size, epochs, param_grid
     gc.collect()
     # summarize results
     print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
@@ -120,36 +131,76 @@ def train_model1(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                 lr1=[0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
                 lr2=[0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
                 dec_act=['linear', 'sigmoid'],
-                loss='binary_crossentropy'):
+                loss='binary_crossentropy',
+                part='feaext',
+                saeparams_path='saeparams_path'):
     x_train = load_trainset(trainset[0], limits_array, x_mean, x_std, x_u, x_s, epsilon)
+    print x_train
     y_train = trainset[1]
     dataset_train = trainset_trans(x_train, y_train)
     overparams_lists = []
     start_time = timeit.default_timer()
+    if part == 'feaext':
+        SAE_encoder, se_overparams = train_SAEmodel1(dataset=dataset_train[0],
+                            hidden_layer_list=hidden_layer_list,
+                            epochs=pre_epoch,
+                            batch_size=batch_size,
+                            lr=lr1,
+                            dec_act=dec_act)
+        overparams_lists.append(se_overparams)
+        saeparams = dict()
+        saeparams['hids'] = se_overparams['hidden_layer_list']
+        saeparams['weights'] = []
+        for i in range(len(SAE_encoder.layers)):
+            saeparams['weights'].append(SAE_encoder.layers[i].get_weights())
+        save_params( saeparams, saeparams_path)
+        end_time = timeit.default_timer()
+        train_time = (end_time - start_time) / 60.
+        print 'finish greedy traning'
+        return saeparams, overparams_lists, train_time
+    if part == 'clf':
+        saeparams = load_params(saeparams_path)
+        PFL_model, pfl_overparams = train_PFLmodel1(dataset=dataset_train,
+                                    saeparams=saeparams,
+                                    lr=lr2,
+                                    batch_size=batch_size,
+                                    epochs=fine_epoch,
+                                    loss=loss)
+        overparams_lists.append(pfl_overparams)
+        end_time = timeit.default_timer()
+        train_time = (end_time - start_time) / 60.
+        return PFL_model, overparams_list, train_time
 
-    SAE_encoder, se_overparams = train_SAEmodel1(dataset=dataset_train[0],
+def train_model2(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
+                hidden_layer_list=[[228, 228], [228, 76], [228, 76, 38]],
+                pre_epoch=[200, 500, 700],
+                fine_epoch=500,
+                batch_size=[1380, 5520, 8820],
+                lr1=[0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
+                lr2=0.003,
+                dec_act=['linear', 'sigmoid'],
+                loss='binary_crossentropy'):
+    x_train = load_trainset(trainset[0], limits_array, x_mean, x_std, x_u, x_s, epsilon)
+    y_train = trainset[1]
+    dataset_train = trainset_trans(x_train, y_train)
+    start_time = timeit.default_timer()
+    PFL_model, se_overparams = train_SAEmodel1(dataset=dataset_train[0],
                         hidden_layer_list=hidden_layer_list,
                         epochs=pre_epoch,
                         batch_size=batch_size,
                         lr=lr1,
                         dec_act=dec_act)
-    overparams_lists.append(se_overparams)
-
-    model_path = 'lgt30071_architechture.json'
-    weights_path = 'lgt30071_weights.h5'
-    #save_model(SAE_encoder, model_path, weights_path)
-    SAE_encoder = load_model(model_path, weights_path)
     print 'finish greedy traning'
-    PFL_model, pfl_overparams = train_PFLmodel1(dataset=dataset_train,
-                                saemodel=params,
-                                lr=lr2,
-                                batch_size=batch_size,
-                                epochs=fine_epoch,
-                                loss=loss)
-    overparams_lists.append(pfl_overparams)
+    adam = Adam(lr=lr2, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+    PFL_model.add(Dense(1, init='uniform', activation='sigmoid'))
+    PFL_model.compile(optimizer=adam, loss=loss, metrics=['accuracy'])
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5)
+    PFL_model.fit(x=dataset_train[0], y=dataset_train[1], batch_size=se_overparams['batch_size'], epochs=fine_epoch,
+                verbose=1, callbacks=[early_stopping], validation_split=0.2,
+                shuffle=True)
     end_time = timeit.default_timer()
     train_time = (end_time - start_time) / 60.
-    return PFL_model, overparams_lis, train_time
+    return PFL_model, se_overparams, train_time
 
 def create_greedylayer(input_num, hidden_unit, lr, dec_act):
     adam = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
@@ -185,7 +236,7 @@ def train_greedylayer(trainset, dec_act, hidden_unit, lr, batch_size, epochs):
     gc.collect()
     return weights, grid_result.best_params_
 
-def train_model2(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
+def train_model3(trainset, limits_array, x_mean, x_std, x_u, x_s, epsilon=0.1,
                  hidden_unit=[20, 40, 160, 320], hidden_num=3,
                  pre_epoch=[200, 500, 800],
                  fine_epoch=[300, 500, 1000],
@@ -425,8 +476,8 @@ def get_output_of_layer(model, x, k):
 
 def label_pre(y_pred):
     y_pred = y_pred
-    labels_list, labels_counts = numpy.unique(y_pred, return_counts=True)
-    label_pre = labels_list[numpy.where(labels_counts==numpy.max(labels_counts))]
+    labels_list, labels_counts = np.unique(y_pred, return_counts=True)
+    label_pre = labels_list[np.where(labels_counts==np.max(labels_counts))]
     if len(label_pre) == 1:
         label_pre = int(label_pre)
     else:
@@ -601,10 +652,21 @@ def load_model(model_path, weights_path):
     model.load_weights(weights_path)
     return model
 
+def save_params(params, params_path):
+    output = open(params_path, 'wb')
+    pickle.dump(params, output, -1)
+    output.close()
+
+def load_params(params_path):
+    pkl_file = open(params_path, 'rb')
+    params = pickle.load(pkl_file)
+    pkl_file.close()
+    return params
+
 def test_model(model, testset, limits_array, x_mean, x_std, u, s, epsilon=0.01):
     x_test = load_trainset(testset[0], limits_array, x_mean, x_std, u, s, epsilon)
     y_test = testset[1]
-    y_test_pred = np.zeros(len(y_test), dtype=int32)
+    y_test_pred = np.zeros(len(y_test), dtype=int)
     start_time = timeit.default_timer()
     for i in range(len(x_test)):
         yr_pred_proba = model.predict(x_test[i])
@@ -651,16 +713,16 @@ def main():
     x_u = np.load('x_u_lgt.npy')
     x_s = np.load('x_s_lgt.npy')
 
-    hidden_layer_list=[[146]]
-    pre_epoch=[800]
-    fine_epoch=[800]
+    hidden_layer_list=[[146, 73, 35], [292, 292, 146]]
+    pre_epoch=[200, 500]
+    fine_epoch=1000
     batch_size=[1380]
-    lr1=[0.003]
-    lr2=[0.003]
+    lr1=[0.003, 0.001, 0.03, 0.01]
+    lr2=0.003
     dec_act=['linear']
     loss='binary_crossentropy'
 
-    model, params, train_time = train_model1(trainset, limits_array,
+    model, params, train_time = train_model2(trainset, limits_array,
                                              x_mean, x_std, x_u, x_s,
                                     hidden_layer_list=hidden_layer_list,
                                     pre_epoch=pre_epoch,
@@ -669,16 +731,18 @@ def main():
                                     lr2=lr2,
                                     dec_act=dec_act,
                                     loss=loss)
+    test_results = test_model(model, testset, limits_array, x_mean, x_std, x_u, x_s)
+    print test_results
 
 
     #print val_acc, train_time
-    model_path = 'lgt30071_architechture.json'
-    weights_path = 'lgt30071_weights.h5'
+    #model_path = 'lgt30071_architechture.json'
+    #weights_path = 'lgt30071_weights.h5'
     #save_model(model, model_path, weights_path)
-    save_model(model, model_path, weights_path)
+    #save_model(model, model_path, weights_path)
 
-    test_results = test_model(model, testset, limits_array, x_mean, x_std, x_u, x_s)
-    print test_results
+    #test_results = test_model(model, testset, limits_array, x_mean, x_std, x_u, x_s)
+    #print test_results
 
     #location_results = location_model(model, locaset[0], limits_array, x_mean, x_std, x_u, x_s)
     #print location_results
