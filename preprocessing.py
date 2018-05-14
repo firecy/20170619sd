@@ -61,6 +61,7 @@ def data_preprocessing(data, limits_array, x_mean, x_std, x_u, x_s, epsilon):
     datanor_ins = minmax_standardization(data, min_array, max_array)
     datafea_ins = fea_standardization2(datanor_ins, x_mean, x_std)
     datazca_ins = zca_whitening(datafea_ins, x_u, x_s, epsilon, x_mean, x_std)
+    datazca_ins = fea_standardization_inverse(datazca_ins, x_mean, x_std)
     del min_array, max_array, limits_array, datanor_ins, datafea_ins
     gc.collect()
     return datazca_ins
@@ -72,7 +73,6 @@ def load_trainset(xset, limits_array, x_mean, x_std, x_u, x_s, epsilon):
                                       x_mean=x_mean, x_std=x_std,
                                       x_u=x_u, x_s=x_s, epsilon=epsilon)
         xset_pre.append(x_pre)
-    del xset, x_pre, limits_array, x_mean, x_std, x_u, x_s, epsilon
     gc.collect()
     return xset_pre
 
@@ -98,11 +98,12 @@ def trainset_trans(trainset, labels):
     return x0, y0
 
 if __name__ == '__main__':
-    xset = np.load('data_all.npy')[0]
-    limits_array = np.loadtxt('data_limits.csv', delimiter=',')
-    x_mean, x_std, x_u, x_s = get_mean_std_usv(xset, limits_array)
-    np.save('x_mean_lgt', x_mean)
-    np.save('x_std_lgt', x_std)
-    np.save('x_u_lgt', x_u)
-    np.save('x_s_lgt', x_s)
-    print 'finish'
+    xset = np.load('data_all.npy')
+    print len(xset[1])
+    #limits_array = np.loadtxt('data_limits.csv', delimiter=',')
+    #x_mean, x_std, x_u, x_s = get_mean_std_usv(xset, limits_array)
+    #np.save('x_mean_lgt', x_mean)
+    #np.save('x_std_lgt', x_std)
+    #np.save('x_u_lgt', x_u)
+    #np.save('x_s_lgt', x_s)
+    #print 'finish'
