@@ -22,47 +22,18 @@ def minmax_standardization(x, x_min, x_max):
     x_nor = (x - x_min) / (x_max - x_min)
     return x_nor
 
-def fea_standardization(x):
-    '''
-    this function realizes data feature standardization.
-    The data is converted to a mean of 0 and variance data 1.
-    '''
-    x -= np.mean(x, axis=0)
-    for i in range(x.shape[1]):
-        if np.std(x[:, i]) != 0: x[:, i] /= np.std(x[:, i])
-    return x
-
-def fea_standardization2(x, x_mean, x_std):
-    '''
-    this function realizes data feature standardization.
-    The data is converted to a mean of 0 and variance data 1.
-    '''
-    x -= x_mean
-    for i in range(x.shape[1]):
-        if np.std(x[:, i]) != 0: x[:, i] /= np.std(x[:, i])
-    return x
-
-def fea_standardization_inverse(x, x_mean, x_std):
-    for i in range(x.shape[1]):
-        if np.std(x[:, i]) != 0: x[:, i] *= np.std(x[:, i])
-    x += x_mean
-    return x
-
 def get_usv(x):
-    #x = fea_standardization(x)
     cov = np.dot(x.T, x) / x.shape[0]
     x_u, x_s, x_v = np.linalg.svd(cov)
     return x_u, x_s
 
-def zca_whitening(x, x_u, x_s, epsilon, x_mean, x_std):
+def zca_whitening(x, x_u, x_s, epsilon):
     '''
     this function is aimed to reduce the relevance of data and noises.
     '''
-    #x -= np.mean(x, axis=0)
     xrot = np.dot(x, x_u)
     xpcawhite = xrot / np.sqrt(x_s + epsilon)
     xzcawhite = np.dot(xpcawhite, x_u.T)
-    #xzcawhite = fea_standardization_inverse(xzcawhite, x_mean, x_std)
     return xzcawhite
 
 def ts_ms(ts):
