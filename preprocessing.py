@@ -47,26 +47,27 @@ def get_us(xset, limits_array):
     min_array = limits_array[0, :]
     max_array = limits_array[1, :]
     xset = np.vstack((xset))
+    x_mean = np.mean(xset, axis=0)
     xnor = minmax_standardization(xset, min_array, max_array)
     x_u, x_s = get_usv(xnor)
     del xset, xnor, min_array, max_array, limits_array
     gc.collect()
-    return x_u, x_s
+    return x_u, x_s, x_mean
 
-def data_preprocessing(data, limits_array, x_u, x_s, epsilon):
+def data_preprocessing(data, limits_array, x_u, x_s, x_mean, epsilon):
     min_array = limits_array[0, :]
     max_array = limits_array[1, :]
     datanor_ins = minmax_standardization(data, min_array, max_array)
-    datazca_ins = zca_whitening(datanor_ins, x_u, x_s, epsilon)
+    datazca_ins = zca_whitening(datanor_ins, x_u, x_s, x_mean, epsilon)
     del min_array, max_array, limits_array, datanor_ins
     gc.collect()
     return datazca_ins
 
-def load_trainset(xset, limits_array, x_u, x_s, epsilon):
+def load_trainset(xset, limits_array, x_u, x_s, x_mean, epsilon):
     xset_pre = []
     for i in range(len(xset)):
         x_pre = data_preprocessing(data=xset[i], limits_array=limits_array,
-                                      x_u=x_u, x_s=x_s, epsilon=epsilon)
+                                      x_u=x_u, x_s=x_s, x_mean=x_mean, epsilon=epsilon)
         xset_pre.append(x_pre)
     gc.collect()
     return xset_pre
@@ -97,7 +98,7 @@ if __name__ == '__main__':
     xset = np.load('data_all.npy')
     print len(xset[1])
     #limits_array = np.loadtxt('data_limits.csv', delimiter=',')
-    #x_mean, x_std, x_u, x_s = get_mean_std_usv(xset, limits_array)
+    #x_u, x_s, x_mean = get_mean_std_usv(xset, limits_array)
     #np.save('x_mean_lgt', x_mean)
     #np.save('x_std_lgt', x_std)
     #np.save('x_u_lgt', x_u)

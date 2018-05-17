@@ -23,17 +23,20 @@ def minmax_standardization(x, x_min, x_max):
     return x_nor
 
 def get_usv(x):
+    x -= np.mean(x, axis=0)
     cov = np.dot(x.T, x) / x.shape[0]
     x_u, x_s, x_v = np.linalg.svd(cov)
     return x_u, x_s
 
-def zca_whitening(x, x_u, x_s, epsilon):
+def zca_whitening(x, x_u, x_s, x_mean, epsilon):
     '''
     this function is aimed to reduce the relevance of data and noises.
     '''
+    x -= x_mean
     xrot = np.dot(x, x_u)
     xpcawhite = xrot / np.sqrt(x_s + epsilon)
     xzcawhite = np.dot(xpcawhite, x_u.T)
+    xzcawhite += x_mean
     return xzcawhite
 
 def ts_ms(ts):

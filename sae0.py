@@ -177,11 +177,11 @@ def train_SAEPFL(dataset, hidden_layer_list, sae_epoch, clf_epoch,
     valid_accuracy =  history.history['val_acc'][-1]
     return SAEPFL, valid_accuracy, overparams
 
-def train_model1(trainset, limits_array, x_u, x_s, epsilon=0.1,
+def train_model1(trainset, limits_array, x_u, x_s, x_mean, epsilon=0.1,
                 hidden_layer_list=[50, 20],sae_epoch=[50, 20], clf_epoch=100,
                 sae_batch_size=1380, clf_batch_size=1380, sae_lr=[0.001, 0.001], clf_lr=0.001):
     start_time = timeit.default_timer()
-    x_train = load_trainset(trainset[0], limits_array, x_u, x_s, epsilon)
+    x_train = load_trainset(trainset[0], limits_array, x_u, x_s, x_mean, epsilon)
     y_train = trainset[1]
     data_train = trainset_trans(x_train, y_train)
     results = train_SAEPFL(dataset=data_train,
@@ -249,7 +249,7 @@ def train_SAE2(dataset, hidden_layer_list, lr, batch_size, epochs):
     print len(best_model.layers)
     return best_model, grid_result.best_params_
 
-def train_model2(trainset, limits_array, x_u, x_s, epsilon=0.1,
+def train_model2(trainset, limits_array, x_u, x_s, x_mean, epsilon=0.1,
                 hidden_layer_list=[[228, 228], [228, 76], [228, 76, 38]],
                 sae_epoch=[200, 500, 700],
                 clf_epoch=500,
@@ -258,7 +258,7 @@ def train_model2(trainset, limits_array, x_u, x_s, epsilon=0.1,
                 sae_lr=[0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
                 clf_lr=0.003):
     start_time = timeit.default_timer()
-    x_train = load_trainset(trainset[0], limits_array, x_u, x_s, epsilon)
+    x_train = load_trainset(trainset[0], limits_array, x_u, x_s, x_mean, epsilon)
     dataset_train = trainset_trans(x_train, trainset[1])
     y_train = np_utils.to_categorical(dataset_train[1], 2)
     PFL_model, overparams = train_SAE2(dataset=dataset_train[0],
@@ -315,7 +315,7 @@ def missdata_implement(x, encoder):
             x2[i] = np.vstack((x1, x3))
     return x2
 
-def train_model3(trainset, limits_array, x_u, x_s, epsilon=0.1,
+def train_model3(trainset, limits_array, x_u, x_s, x_mean, epsilon=0.1,
                 hidden_layer_list=[[292, 292, 146]],
                 sae_batch_size=[1380, 2760],
                 sae_epoch=[200, 200, 200],
@@ -323,7 +323,7 @@ def train_model3(trainset, limits_array, x_u, x_s, epsilon=0.1,
                 clf_epoch=1000,
                 clf_lr=0.003,
                 clf_batch_size=10):
-    x_train = load_trainset(trainset[0], limits_array, x_u, x_s, epsilon)
+    x_train = load_trainset(trainset[0], limits_array, x_u, x_s, x_mean, epsilon)
     y_train = trainset[1]
     xencd_train = trainset_trans(x_train, y_train)[0]
     start_time = timeit.default_timer()
@@ -387,7 +387,7 @@ def train_SAE4(dataset, hidden_layer_list, epoch, batch_size, lr):
         x = h
     return SAE, overparams
 
-def train_model4(trainset, limits_array, x_u, x_s, epsilon=1e+24,
+def train_model4(trainset, limits_array, x_u, x_s, x_mean, epsilon=1e+24,
                 hidden_layer_list=[292, 292, 146],
                 sae_batch_size=1380,
                 sae_epoch=[200, 200, 200],
@@ -395,7 +395,7 @@ def train_model4(trainset, limits_array, x_u, x_s, epsilon=1e+24,
                 clf_epoch=1000,
                 clf_lr=0.003,
                 clf_batch_size=10):
-    x_train = load_trainset(trainset[0], limits_array, x_u, x_s, epsilon)
+    x_train = load_trainset(trainset[0], limits_array, x_u, x_s, x_mean, epsilon)
     y_train = trainset[1]
     xencd_train = trainset_trans(x_train, y_train)[0]
     start_time = timeit.default_timer()
@@ -443,8 +443,8 @@ def load_params(params_path):
     pkl_file.close()
     return params
 
-def test_model(model, testset, limits_array, x_u, x_s, epsilon=0.1):
-    x_test = load_trainset(testset[0], limits_array, x_u, x_s, epsilon)
+def test_model(model, testset, limits_array, x_u, x_s, x_mean, epsilon=0.1):
+    x_test = load_trainset(testset[0], limits_array, x_u, x_s, x_mean, epsilon)
     y_test = testset[1]
     y_test_pred = np.zeros(len(y_test), dtype=int)
     start_time = timeit.default_timer()
@@ -466,8 +466,8 @@ def test_model(model, testset, limits_array, x_u, x_s, epsilon=0.1):
     F1 = f1_score(y_test2, y_test_pred2, average='macro')
     return accuracy, F1, test_time
 
-def test_model2(encoder, pfl, testset, limits_array, x_u, x_s, epsilon=0.1):
-    x_test = load_trainset(testset[0], limits_array, x_u, x_s, epsilon)
+def test_model2(encoder, pfl, testset, limits_array, x_u, x_s, x_mean, epsilon=0.1):
+    x_test = load_trainset(testset[0], limits_array, x_u, x_s, x_mean, epsilon)
     y_test = testset[1]
     x_test = missdata_implement(x_test, encoder)
     y_test_pred = np.zeros(len(y_test), dtype=int)
@@ -485,8 +485,8 @@ def test_model2(encoder, pfl, testset, limits_array, x_u, x_s, epsilon=0.1):
     F1 = f1_score(y_test2, y_test_pred2, average='macro')
     return accuracy, F1, test_time
 
-def location_model(model, dataset, limits_array, x_mean, x_std, x_u, x_s, sfault_num=2, epsilon=0.01):
-    x = load_trainset(dataset, limits_array, x_mean, x_std, x_u, x_s, epsilon)
+def location_model(model, dataset, limits_array, x_u, x_s, x_mean, epsilon=0.01):
+    x = load_trainset(dataset, limits_array, x_u, x_s, x_mean, epsilon)
     #y_pred = np.zeros(fault_num, dtype=int32)
     result_list = []
     start_time = timeit.default_timer()
@@ -502,8 +502,8 @@ def location_model(model, dataset, limits_array, x_mean, x_std, x_u, x_s, sfault
         #print dataset[1][i],'\t', y_pred,'\t', y_proba, '\t', location_time
     return result_list
 
-def location_model2(encoder, pfl, dataset, limits_array, x_u, x_s, sfault_num=2, epsilon=0.01):
-    x = load_trainset(dataset, limits_array, x_u, x_s, epsilon)
+def location_model2(encoder, pfl, dataset, limits_array, x_u, x_s, x_mean, epsilon=0.01):
+    x = load_trainset(dataset, limits_array, x_u, x_s, x_mean, epsilon)
     x = missdata_implement(x, encoder)
     result_list = []
     start_time = timeit.default_timer()
@@ -523,6 +523,7 @@ def main():
     limits_array = np.loadtxt('data_limits.csv', delimiter=',')
     x_u = np.loadtxt('x_u_lgt.csv', delimiter=',')
     x_s = np.loadtxt('x_s_lgt.csv', delimiter=',')
+    x_mean = np.loadtxt('x_mean_lgt.csv', delimiter=',')
 
     hidden_layer_list = [304, 152, 76]
     sae_epoch = [10, 10, 10]
@@ -534,7 +535,7 @@ def main():
     epsilon = 0.1
     '''
     model, train_accuracy, params, train_time = train_model1(trainset, limits_array,
-                                            x_u, x_s, epsilon,
+                                            x_u, x_s, x_mean, epsilon,
                                     hidden_layer_list=hidden_layer_list,
                                     sae_batch_size=sae_batch_size,
                                     clf_batch_size=clf_batch_size,
@@ -545,7 +546,7 @@ def main():
 
 
     model, train_accuracy, params, train_time = train_model2(trainset, limits_array,
-                                            x_u, x_s, epsilon,
+                                            x_u, x_s, x_mean, epsilon,
                                     hidden_layer_list=hidden_layer_list,
                                     sae_batch_size=sae_batch_size,
                                     clf_batch_size=clf_batch_size,
@@ -555,12 +556,12 @@ def main():
                                     clf_lr=clf_lr)
 
 
-    test_results = test_model(model, testset, limits_array, x_u, x_s, epsilon)
+    test_results = test_model(model, testset, limits_array, x_u, x_s, x_mean, epsilon)
     print test_results
 
 
     encoder, pfl, train_accuracy, overparams, train_time = train_model3(trainset,
-                    limits_array, x_u, x_s, epsilon,
+                    limits_array, x_u, x_s, x_mean, epsilon,
                     hidden_layer_list=hidden_layer_list,
                     sae_batch_size=sae_batch_size,
                     sae_epoch=sae_epoch,
@@ -570,7 +571,7 @@ def main():
                     clf_batch_size=clf_batch_size)
     '''
     encoder, pfl, train_accuracy, overparams, train_time = train_model4(trainset,
-                    limits_array, x_u, x_s, epsilon,
+                    limits_array, x_u, x_s, x_mean, epsilon,
                     hidden_layer_list=hidden_layer_list,
                     sae_batch_size=sae_batch_size,
                     sae_epoch=sae_epoch,
@@ -579,19 +580,14 @@ def main():
                     clf_lr=clf_lr,
                     clf_batch_size=clf_batch_size)
 
-    test_results = test_model2(encoder, pfl, testset, limits_array, x_u, x_s, epsilon)
+    test_results = test_model2(encoder, pfl, testset, limits_array, x_u, x_s, x_mean, epsilon)
     print test_results
 
-
-    #print val_acc, train_time
     #model_path = 'lgt30071_architechture.json'
     #weights_path = 'lgt30071_weights.h5'
     #save_model(model, model_path, weights_path)
-    #save_model(model, model_path, weights_path)
-
-    #test_results = test_model(model, testset, limits_array, x_mean, x_std, x_u, x_s)
-    #print test_results
-
+    
+    #model = load_model(model_path, weights_path)
     #location_results = location_model(model, locaset[0], limits_array, x_mean, x_std, x_u, x_s)
     #print location_results
 
